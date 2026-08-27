@@ -2,7 +2,7 @@ Graphite Theme Set To E-ink Works the best
 
 If the image is too big for flash, Merge your app partitions:
 
-copy C:\esphb\UAESbBJ-\build\elecrow-hmi-7\partitions.csv and rename the copy to custom_partitions.csv, replace the lines within then flash
+copy C:\esphb\(DeviceFolder)-\build\elecrow-hmi-7\partitions.csv and rename the copy to custom_partitions.csv, replace the lines within then flash
  
 otadata, data, ota, , 0x2000,
 phy_init, data, phy, , 0x1000,
