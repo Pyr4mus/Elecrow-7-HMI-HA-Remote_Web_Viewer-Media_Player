@@ -190,15 +190,7 @@ media_player:
       speaker: speaker_out
       format: FLAC
       sample_rate: 32000        
-      num_channels: 1
-
-    files:
-      - id: timer_finished_sound
-        file: https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/timer_finished.flac
-    on_announcement:
-      - lambda: |-
-          uint8_t cmd[1] = { 0x17 };
-          id(bus_a).write(0x30, cmd, 1);      
+      num_channels: 1    
       
 ################################################################################
 # Binary Sensor
