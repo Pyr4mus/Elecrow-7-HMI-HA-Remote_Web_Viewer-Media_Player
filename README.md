@@ -1,3 +1,5 @@
+Based On the Project https://github.com/strange-v/RemoteWebViewClient
+
 For Elecrow 7 HMI ESP2-s3 With 4MB FLash Using Home Assistant
 (Also Known as IoTeikXgo on Amazon)
 
