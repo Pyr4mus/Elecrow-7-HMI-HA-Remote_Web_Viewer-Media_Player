@@ -1,0 +1,472 @@
+################################################################################
+# Substitutions
+################################################################################
+
+substitutions:
+  initial_url: "http://192.168.0.X:8123/home/overview"  #this should be the URL to your Home Assistant dashboard you want to display
+
+################################################################################
+# Time
+################################################################################
+      
+time:
+  - platform: homeassistant
+    id: ha_time
+
+################################################################################
+# Redirects
+################################################################################    
+    
+http_request:
+  follow_redirects: true    
+
+################################################################################
+# Board & framework
+################################################################################
+
+esphome:
+  name: elecrow-hmi-7
+  friendly_name: Elecrow_HMI_7
+  build_flags: 
+    - "-DBOARD_HAS_PSRAM"                                  # Enable PSRAM support in compilation
+  on_boot:                                                   # Actions to execute during boot phase
+    priority: -100                                            # High priority to run before most components
+    then:
+      - delay: 5s
+      - light.turn_on:
+          id: back_light
+          brightness: !lambda return int( id(sd_backlight_brightness).state )/ 100.0;
+      - script.execute: about_blank_stuck
+        
+      - lambda: |- 
+          uint8_t addr = 0x18;                               // PCA9557 I2C expander slave address
+          
+          uint8_t config[2] = {0x03, 0x00};                  // 1. Set all PCA9557 pins as outputs
+          id(bus_a).write(addr, config, 2);                  // Write configuration via I2C bus
+          
+          uint8_t output_low[2] = {0x01, 0x00};              // 2. IO0=LOW, IO1=LOW (Hard reset GT911)
+          id(bus_a).write(addr, output_low, 2);              // Apply low signals to reset pins
+          
+          delay(20);                                         // 3. Hold reset state for 20 milliseconds
+          
+          uint8_t output_high[2] = {0x01, 0x01};             // 4. IO0=HIGH (Release GT911 reset sequence)
+          id(bus_a).write(addr, output_high, 2);             // Apply high signal to wake up touch IC
+          
+          delay(100);                                        // 5. Wait 100ms for touch IC to initialize
+          
+          uint8_t config_input[2] = {0x03, 0x02};            // 6. Set IO1 as input for GT911 interrupt
+          id(bus_a).write(addr, config_input, 2);            // Finalize PCA9557 pin configuration
+
+esp32:                                                       # ESP32 specific hardware configuration
+  board: esp32s3box                                          # Base board model for ESP32-S3
+  flash_size: 4MB
+  partitions: custom_partitions.csv
+  cpu_frequency: 240MHz  
+  framework: 
+    type: esp-idf                                            # Use official ESP-IDF framework, not Arduino
+    advanced:
+      disable_vfs_support_termios: false
+      disable_vfs_support_select: false
+      disable_vfs_support_dir: false      
+      execute_from_psram: true      
+      enable_idf_experimental_features: true 
+      loop_task_stack_size: 10240
+    sdkconfig_options:
+      CONFIG_FATFS_LFN_STACK: "y"
+      COMPILER_OPTIMIZATION_SIZE: y
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: y                 # Set CPU frequency to max (240MHz)
+      CONFIG_ESP32S3_DATA_CACHE_64KB: y                      # Allocate 64KB for data cache
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: y
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y                    # Allow instruction fetch from SPIRAM
+      CONFIG_SPIRAM_RODATA: y                                # Store read-only data in SPIRAM
+      CONFIG_SPIRAM_USE: y                                   # Enable external SPIRAM globally
+      CONFIG_SPIRAM_SPEED_80M: y                             # Set SPIRAM clock speed to 80MHz
+      CONFIG_SPIRAM_MODE_OCT: y                              # Use Octal mode for faster RAM access
+      CONFIG_ESP32S3_SPIRAM_SUPPORT: y                       # Enable ESP32-S3 specific SPIRAM support
+    components:
+    - name: "espressif/esp_websocket_client"
+      ref: 1.5.0
+    - name: "bitbank2/jpegdec"
+      source: https://github.com/SleepinDevil/jpegdec-esphome
+  variant: esp32s3                                           # Specify the chip variant exactly    
+  
+psram:                                                       # Physical PSRAM configuration block
+  mode: octal                                                # Octal SPI mode matches board layout
+  speed: 80MHz                                               # 80MHz speed matches sdkconfig options
+
+################################################################################
+# Core services
+################################################################################
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "XXXXXXXXX"
+
+ota:
+  - platform: esphome
+    password: "XXXXXXXXX"
+    on_begin: # prevent screen flickering during OTA
+      - light.turn_off:
+          id: back_light
+          transition_length: 0s
+      - lambda: "id(back_light).loop();" 
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Basic-Hmi-70Inch"
+    password: "f9XVlSaUD4ao"
+
+################################################################################
+# WebView
+################################################################################     
+    
+external_components:
+  - source: github://strange-v/RemoteWebViewClient@main
+    refresh: 0s
+    components: [ remote_webview ] 
+
+  - source: github://n-serrette/esphome_sd_card@main   
+    
+captive_portal:
+
+################################################################################
+# SD Support
+################################################################################   
+
+sd_mmc_card:
+  id: sd_card
+  mode_1bit: true
+  format_if_mount_failed: true
+  clk_pin: 12
+  cmd_pin: 10
+  data0_pin: 13
+  data3_pin: 11
+  
+################################################################################
+# I2C bus
+################################################################################    
+    
+i2c:
+  - id: bus_a
+    sda: 19
+    scl: 20
+    scan: false
+    frequency: 400000
+
+################################################################################
+# I2S
+################################################################################   
+  
+i2s_audio:
+  - id: i2s_audio_bus
+    i2s_lrclk_pin: 18
+    i2s_bclk_pin: 42
+    
+speaker:
+  - platform: i2s_audio
+    id: speaker_out
+    i2s_audio_id: i2s_audio_bus    
+    dac_type: external
+    i2s_dout_pin: 17
+    sample_rate: 32000
+    bits_per_sample: 16bit
+    channel: mono
+    buffer_duration: 200ms
+    timeout: 1000ms
+    
+media_player:
+  - platform: speaker
+    name: "Screen Speaker Media Player"
+    id: speaker_media_player_id
+    announcement_pipeline:
+      speaker: speaker_out
+      format: FLAC
+      sample_rate: 32000        
+      num_channels: 1
+
+    files:
+      - id: timer_finished_sound
+        file: https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/timer_finished.flac
+    on_announcement:
+      - lambda: |-
+          uint8_t cmd[1] = { 0x17 };
+          id(bus_a).write(0x30, cmd, 1);      
+      
+################################################################################
+# Binary Sensor
+################################################################################
+          
+binary_sensor:
+  - platform: status                                # device status notified to home assistant for automations
+    name: "Device Status"
+  
+################################################################################
+# Switch
+################################################################################    
+    
+switch:                                                      # Switch entities exposed to Home Assistant
+  - platform: gpio                                           # Basic GPIO toggle switch
+    pin: 38                                                  # Connected to physical GPIO 38
+    name: "Screen Light Control"                             # Entity name shown in Home Assistant
+    id: led_switch                                           # Internal ID for UI interaction
+        
+################################################################################
+# Button
+################################################################################    
+
+button:
+  - platform: template
+    name: "Test on_frame_update trigger"
+    on_press:
+      then:
+      - remote_webview.trigger_on_frame_update:
+          id: rwv
+    entity_category: "diagnostic" 
+  - platform: template
+    name: "Test script for blank screen fix"
+    on_press:
+      then:
+      - script.execute: about_blank_stuck
+    entity_category: "diagnostic" 
+
+################################################################################
+# Display — New - 800×480
+################################################################################  
+  
+display:
+  - platform: mipi_rgb
+    model: RPI
+    id: main_display
+    
+    color_order: RGB
+    invert_colors: true
+    
+    auto_clear_enabled: false
+    update_interval: never
+    
+    dimensions:
+      width: 800
+      height: 480
+      
+    de_pin: 41
+    hsync_pin: 39
+    vsync_pin: 40
+    pclk_pin: 0
+    
+    pclk_frequency: 6MHz
+    pclk_inverted: true
+    
+    hsync_front_porch: 40
+    hsync_pulse_width: 48
+    hsync_back_porch: 40
+    
+    vsync_front_porch: 1
+    vsync_pulse_width: 31
+    vsync_back_porch: 13
+    
+    data_pins:
+      red: [14, 21, 47, 48, 45]
+      green: [9, 46, 3, 8, 16, 1]
+      blue: [15, 7, 6, 5, 4]
+
+################################################################################
+# BackLight
+################################################################################
+  
+number:
+  - platform: template
+    name: Backlight Brightness
+    id: sd_backlight_brightness
+    optimistic: true
+    restore_value: true
+    min_value: 30
+    max_value: 100
+    initial_value: 70
+    step: 5
+    set_action:
+      then:
+      - light.turn_on:
+          id: back_light
+          brightness: !lambda return int(x)/ 100.0;
+      - script.execute: inactivity_timer
+      
+output:                                                      # Hardware output definitions
+  - platform: ledc                                           # Use ESP32 LEDC hardware PWM controller
+    pin: 2                                                   # GPIO 2 controls the display backlight
+    frequency: 1220                                          # 1220 Hz PWM frequency prevents flickering
+    id: gpio_backlight_pwm                                   # Internal ID to link with light component
+    min_power: 0.01
+    zero_means_zero: true    
+    
+light:                                                       # Light entities exposed to Home Assistant
+  - platform: monochromatic                                  # Single-color brightness-controlled light
+    output: gpio_backlight_pwm                               # Link to the PWM output defined above
+    name: Display Backlight                                  # Entity name shown in Home Assistant
+    id: back_light                                           # Internal ID for automation reference
+    restore_mode: ALWAYS_ON                                  # Ensure screen turns on after power loss    
+    default_transition_length: 0s
+
+################################################################################
+# Touchscreen — GT911 capacitive, I²C
+################################################################################    
+    
+touchscreen:                                                 # Touch digitizer configuration
+  platform: gt911                                            # Driver for Goodix GT911 controllers
+  id: my_touchscreen                                         # Internal ID for LVGL touch input
+  i2c_id: bus_a                                              # Connect to the configured I2C bus_a
+  display: main_display                                      # Link touch input to the main display
+  update_interval: 50ms                                      # Poll touch events every 20 milliseconds
+  transform: 
+    mirror_x: false                                          # Do not invert X-axis coordinates
+    mirror_y: false                                          # Do not invert Y-axis coordinates
+    swap_xy: false                                           # Do not swap X and Y axes
+  on_touch:
+    then:
+      - script.execute: inactivity_timer
+        
+################################################################################
+# Fonts
+################################################################################
+
+font:
+  - file: "gfonts://Roboto"
+    id: font_clock
+    size: 72
+    bpp: 4
+
+  - file: "gfonts://Roboto"
+    id: font_date
+    size: 26
+    bpp: 4
+
+  - file: "gfonts://Roboto"
+    id: font_temp
+    size: 34
+    bpp: 4
+
+  - file: "gfonts://Roboto"
+    id: font_btn
+    size: 22
+    bpp: 4
+
+  - file: "gfonts://Roboto"
+    id: font_heading
+    size: 18
+    bpp: 4
+        
+################################################################################
+# Colors
+################################################################################
+
+color:
+  - id: col_bg
+    hex: "111827"
+  - id: col_header_bg
+    hex: "1F2937"
+  - id: col_divider
+    hex: "374151"
+  - id: col_text_primary
+    hex: "F9FAFB"
+  - id: col_text_secondary
+    hex: "9CA3AF"
+  - id: col_accent
+    hex: "3B82F6"
+  - id: col_btn_off
+    hex: "1F2937"
+  - id: col_btn_on
+    hex: "D97706"
+  - id: col_scene_btn
+    hex: "1E3A5F"
+  - id: col_scene_active
+    hex: "1D4ED8"    
+
+################################################################################
+# Remote Webview
+################################################################################    
+    
+remote_webview:
+  id: rwv
+  server: 192.168.0.X:8081
+  url: http://192.168.0.X/home/overview  # set url: "self-test" to initiate the self-test
+  full_frame_tile_count: 1
+  every_nth_frame: 1
+  max_bytes_per_msg: 61440
+  min_frame_interval: 64
+  jpeg_quality: 65
+  big_endian: true
+  on_frame_update:
+    then:
+      - script.execute: inactivity_timer
+  current_url_sensor:
+    id: current_url_sensor_id
+    name: "Remote Display Current URL"
+    on_value:
+      - logger.log:
+          format: "The screen just navigated to: %s"
+          args: [ 'x.c_str()' ]
+
+text:
+  - platform: template
+    id: rwv_url
+    name: "URL"
+    optimistic: true
+    restore_value: false
+    mode: TEXT
+    min_length: 1
+    set_action:
+      - lambda: |-
+          if (!id(rwv).open_url(std::string(x.c_str()))) {
+            id(rwv).set_url(std::string(x.c_str()));
+            ESP_LOGI("remote_webview", "URL queued (not connected): %s", x.c_str());
+          }
+
+################################################################################
+# Scripts
+################################################################################ 
+          
+script:
+
+# Display Screen Inactivity ####################################################
+  - id: inactivity_timer
+    mode: restart
+    then:
+      - light.turn_on: 
+          id: back_light
+          brightness: !lambda return int ( id (sd_backlight_brightness).state )/ 100.0;
+          transition_length: 0.5s
+      - delay: 10s
+      - light.dim_relative:
+          id: back_light
+          relative_brightness: -40%
+          transition_length: 3s
+          brightness_limits:
+            min_brightness: 30%
+  - id: about_blank_stuck
+    mode: restart
+    then:
+      - delay: 30s
+      - if: 
+          condition:
+            lambda: |-
+              std::string server_url = id(current_url_sensor_id).state;
+              ESP_LOGI("remote_webview", "URL Sensor Text:%s. Empty:%d. Length:%d.", server_url.c_str(), server_url.empty(), server_url.length() );
+              return (server_url.empty() || server_url.length() < 10 || server_url == "unknown" || server_url == "Unknown" );
+          then:
+            - logger.log: "Current displayed URL is 'Unknown', let's attempt to set it again."
+            - lambda: |-
+                if ( !id(rwv).open_url( "${initial_url}" ) ) {
+                  id(rwv).set_url("${initial_url}");
+                  ESP_LOGI("remote_webview", "URL queued (not connected): ${initial_url}");
+                }
+          else:
+            - logger.log: "Initial page load seems to have worked correctly."    
+              
+          
