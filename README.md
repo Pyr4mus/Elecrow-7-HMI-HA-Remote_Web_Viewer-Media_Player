@@ -3,7 +3,7 @@ Based On the Project https://github.com/strange-v/RemoteWebViewClient
 For Elecrow 7 HMI ESP2-s3 With 4MB FLash Using Home Assistant
 (Also Known as IoTeikXgo on Amazon)
 
-Graphite Theme Set To E-ink On Home Assistant Works the best
+Graphite Theme Set To E-ink On Home Assistant Works the best, Install via Hacs
 
 If the image is too big for flash, Merge your app partitions:
 
