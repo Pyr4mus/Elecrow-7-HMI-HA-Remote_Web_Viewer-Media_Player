@@ -4,6 +4,7 @@ For Elecrow 7 HMI ESP2-s3 With 4MB FLash Using Home Assistant
 (Also Known as IoTeikXgo on Amazon)
 
 Graphite Theme Set To E-ink On Home Assistant Works the best, Install via Hacs
+
 TET-49 Works Pretty Well Too
 
 If the image is too big for flash, Merge your app partitions:
