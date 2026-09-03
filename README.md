@@ -9,7 +9,7 @@ TET-49 Works Pretty Well Too
 
 If the image is too big for flash, Merge your app partitions:
 
-copy C:\esphb\[DeviceFolder]-\build\[Device Name]\partitions.csv and rename the copy custom_partitions.csv within the same folder, replace the lines within then flash
+copy C:\esphb\[DeviceFolder]-\build\[Device Name]\partitions.csv and rename the copy custom_partitions.csv to C:\Users\USERNAME\esphome, replace the lines within then flash
  
 otadata, data, ota, , 0x2000,
 phy_init, data, phy, , 0x1000,
